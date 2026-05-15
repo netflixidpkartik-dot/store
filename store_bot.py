@@ -20,8 +20,8 @@ from telegram.error import BadRequest
 #  CONFIG  — only change these
 # ══════════════════════════════════════════════════════
 
-STORE_BOT_TOKEN = "8724901077:AAGIJpnToO8w2yhzkstwYo7QkBo4AOPgWXg"
-BOT_NAME        = "TGAccsShop"
+STORE_BOT_TOKEN = "8832979292:AAH_n-kwIS1Vihwuoy42kxEBuSW966AIQOQ"
+BOT_NAME        = "N E X   S T O R E"
 SUPPORT         = "@nexindo"
 DB_FILE         = "tgaccs.db"          # shared with admin bot
 
