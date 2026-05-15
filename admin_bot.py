@@ -20,8 +20,8 @@ from telegram.error import BadRequest
 #  CONFIG  ← change these
 # ══════════════════════════════════════════════════════
 
-ADMIN_BOT_TOKEN = "8947382539:AAHNaV67BHsnPer3YeNmTkH0scneRDGKKRE"   # get from @BotFather
-ADMIN_IDS       = [6771847301]                        # your Telegram user ID(s)
+ADMIN_BOT_TOKEN = "PUT_YOUR_ADMIN_BOT_TOKEN_HERE"   # get from @BotFather
+ADMIN_IDS       = [123456789]                        # your Telegram user ID(s)
 DB_FILE         = "tgaccs.db"                        # same DB as store bot
 
 # ══════════════════════════════════════════════════════
@@ -758,14 +758,13 @@ async def run():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
     print("✅ Admin Bot running...")
-    try:
+    async with app:
+        await app.start()
+        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await asyncio.Event().wait()
-    finally:
-        await app.updater.stop(); await app.stop(); await app.shutdown()
+        await app.updater.stop()
+        await app.stop()
 
 if __name__ == "__main__":
     asyncio.run(run())
