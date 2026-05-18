@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """shared_db.py — All DB functions used by all 4 bots."""
 
-import sqlite3
-import random
+import sqlite3, random
 from datetime import datetime
 
-DB_FILE = "tgaccs.db"   # change to "/data/tgaccs.db" if using Railway Volume
+DB_FILE = "tgaccs.db"
 
 def _db():
     con = sqlite3.connect(DB_FILE)
@@ -14,39 +13,33 @@ def _db():
 
 def init_db():
     con = _db()
-
     con.execute("""CREATE TABLE IF NOT EXISTS users (
         tg_id INTEGER PRIMARY KEY, name TEXT, username TEXT,
         created_at TEXT, balance REAL DEFAULT 0.0)""")
-
     con.execute("""CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT, price REAL, stock INTEGER DEFAULT 0,
         delivery_type TEXT DEFAULT 'text',
         delivery_content TEXT,
         active INTEGER DEFAULT 1)""")
-
     con.execute("""CREATE TABLE IF NOT EXISTS carts (
         tg_id INTEGER, product_id INTEGER, PRIMARY KEY (tg_id, product_id))""")
-
     con.execute("""CREATE TABLE IF NOT EXISTS orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tg_id INTEGER, order_ref TEXT,
         product_id INTEGER, product_name TEXT,
-        price REAL, status TEXT DEFAULT 'pending',
+        price REAL, quantity INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'pending',
         created_at TEXT, notified INTEGER DEFAULT 0)""")
-
     con.execute("""CREATE TABLE IF NOT EXISTS deposits (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tg_id INTEGER, ref TEXT,
         amount REAL DEFAULT 0, network TEXT,
-        proof_type TEXT, proof_content TEXT, txn_id TEXT,
+        txn_id TEXT,
         status TEXT DEFAULT 'pending',
         created_at TEXT, notified INTEGER DEFAULT 0)""")
-
     con.execute("""CREATE TABLE IF NOT EXISTS wallets (
         key TEXT PRIMARY KEY, label TEXT, address TEXT, active INTEGER DEFAULT 1)""")
-
     con.execute("""CREATE TABLE IF NOT EXISTS redeem_codes (
         code TEXT PRIMARY KEY, amount REAL,
         max_uses INTEGER, used INTEGER DEFAULT 0, created_at TEXT)""")
@@ -62,7 +55,6 @@ def init_db():
             ("usdt_sol",   "🟣 USDT Solana (SPL)",   "CLiBT9JuTJCjpBkf4HXZMCimkzxJKX8PJxJtxHTd6iFe"),
             ("bnb",        "🟡 BNB (BSC)",           "0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
         ])
-
     con.commit(); con.close()
 
 # ── Users ──────────────────────────────────────────────
@@ -80,11 +72,6 @@ def get_balance(tg_id):
 def deduct_balance(tg_id, amount):
     con = _db()
     con.execute("UPDATE users SET balance=balance-? WHERE tg_id=?", (amount, tg_id))
-    con.commit(); con.close()
-
-def add_balance(tg_id, amount):
-    con = _db()
-    con.execute("UPDATE users SET balance=balance+? WHERE tg_id=?", (amount, tg_id))
     con.commit(); con.close()
 
 def get_user_info(tg_id):
@@ -114,9 +101,7 @@ def get_active_products():
 
 def get_all_products():
     con = _db()
-    rows = con.execute(
-        "SELECT id,name,price,stock,delivery_type,active FROM products ORDER BY id"
-    ).fetchall()
+    rows = con.execute("SELECT id,name,price,stock,delivery_type,active FROM products ORDER BY id").fetchall()
     con.close()
     return [{"id":r[0],"name":r[1],"price":r[2],"stock":r[3],
              "delivery_type":r[4],"active":r[5]} for r in rows]
@@ -158,6 +143,11 @@ def delete_product(pid):
     con.execute("DELETE FROM products WHERE id=?", (pid,))
     con.commit(); con.close()
 
+def reduce_stock(pid, qty):
+    con = _db()
+    con.execute("UPDATE products SET stock=MAX(0, stock-?) WHERE id=?", (qty, pid))
+    con.commit(); con.close()
+
 # ── Cart ───────────────────────────────────────────────
 def get_cart(tg_id):
     con = _db()
@@ -178,25 +168,26 @@ def clear_cart(tg_id):
     con.commit(); con.close()
 
 # ── Orders ─────────────────────────────────────────────
-def save_order(tg_id, product, order_ref):
+def save_order(tg_id, product, order_ref, quantity=1):
     con = _db(); now = datetime.now().strftime("%d/%m/%Y %H:%M")
+    total_price = product["price"] * quantity
     con.execute(
-        "INSERT INTO orders (tg_id,order_ref,product_id,product_name,price,status,created_at,notified) "
+        "INSERT INTO orders (tg_id,order_ref,product_id,product_name,price,quantity,status,created_at,notified) "
         "VALUES (?,?,?,?,?,'pending',?,0)",
-        (tg_id, order_ref, product["id"], product["name"], product["price"], now))
+        (tg_id, order_ref, product["id"], product["name"], total_price, quantity, now))
     con.commit(); con.close()
 
 def get_orders(tg_id):
     con = _db()
     rows = con.execute(
-        "SELECT order_ref,product_name,price,status,created_at FROM orders WHERE tg_id=? ORDER BY id DESC",
+        "SELECT order_ref,product_name,price,quantity,status,created_at FROM orders WHERE tg_id=? ORDER BY id DESC",
         (tg_id,)).fetchall()
     con.close(); return rows
 
 def get_unnotified_orders():
     con = _db()
     rows = con.execute("""
-        SELECT o.id,o.tg_id,o.order_ref,o.product_name,o.price,o.created_at,u.name,u.username
+        SELECT o.id,o.tg_id,o.order_ref,o.product_name,o.price,o.quantity,o.created_at,u.name,u.username
         FROM orders o LEFT JOIN users u ON o.tg_id=u.tg_id
         WHERE o.notified=0 ORDER BY o.id""").fetchall()
     con.close(); return rows
@@ -211,34 +202,33 @@ def deliver_order(order_ref):
     con.execute("UPDATE orders SET status='delivered' WHERE order_ref=?", (order_ref,))
     con.commit()
     r = con.execute(
-        "SELECT o.tg_id, p.delivery_type, p.delivery_content "
+        "SELECT o.tg_id, p.delivery_type, p.delivery_content, o.quantity "
         "FROM orders o LEFT JOIN products p ON o.product_id=p.id "
         "WHERE o.order_ref=?", (order_ref,)).fetchone()
-    con.close(); return r  # (tg_id, delivery_type, delivery_content)
+    con.close(); return r  # (tg_id, delivery_type, delivery_content, quantity)
 
 def get_recent_orders_admin(limit=20):
     con = _db()
     rows = con.execute("""
-        SELECT o.order_ref,o.product_name,o.price,o.status,o.created_at,
+        SELECT o.order_ref,o.product_name,o.price,o.quantity,o.status,o.created_at,
                u.name,u.username,o.tg_id
         FROM orders o LEFT JOIN users u ON o.tg_id=u.tg_id
         ORDER BY o.id DESC LIMIT ?""", (limit,)).fetchall()
     con.close(); return rows
 
 # ── Deposits ───────────────────────────────────────────
-def save_deposit_proof(tg_id, ref, network, proof_type, proof_content, txn_id):
+def save_deposit_txn(tg_id, ref, network, txn_id):
     con = _db(); now = datetime.now().strftime("%d/%m/%Y %H:%M")
     con.execute(
-        "INSERT INTO deposits (tg_id,ref,network,proof_type,proof_content,txn_id,status,created_at,notified) "
-        "VALUES (?,?,?,?,?,?,'pending',?,0)",
-        (tg_id, ref, network, proof_type, proof_content, txn_id, now))
+        "INSERT INTO deposits (tg_id,ref,network,txn_id,status,created_at,notified) "
+        "VALUES (?,?,?,?,'pending',?,0)",
+        (tg_id, ref, network, txn_id, now))
     con.commit(); con.close()
 
 def get_unnotified_deposits():
     con = _db()
     rows = con.execute("""
-        SELECT d.id,d.tg_id,d.ref,d.network,d.proof_type,d.proof_content,d.txn_id,d.created_at,
-               u.name,u.username
+        SELECT d.id,d.tg_id,d.ref,d.network,d.txn_id,d.created_at,u.name,u.username
         FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id
         WHERE d.notified=0 ORDER BY d.id""").fetchall()
     con.close(); return rows
