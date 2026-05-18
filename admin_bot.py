@@ -20,8 +20,8 @@ from telegram.error import BadRequest
 #  CONFIG  ← change these
 # ══════════════════════════════════════════════════════
 
-ADMIN_BOT_TOKEN = "8947382539:AAHNaV67BHsnPer3YeNmTkH0scneRDGKKRE"   # get from @BotFather
-ADMIN_IDS       = [6771847301]                        # your Telegram user ID(s)
+ADMIN_BOT_TOKEN = "PUT_YOUR_ADMIN_BOT_TOKEN_HERE"   # get from @BotFather
+ADMIN_IDS       = [123456789]                        # your Telegram user ID(s)
 DB_FILE         = "tgaccs.db"                        # same DB as store bot
 
 # ══════════════════════════════════════════════════════
