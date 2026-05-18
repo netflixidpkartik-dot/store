@@ -11,7 +11,7 @@ from telegram.error import BadRequest
 import shared_db as db
 
 PANEL_BOT_TOKEN = os.environ["PANEL_TOKEN"]
-ADMIN_IDS       = [int(x) for x in os.environ["ADMIN_IDS"].split(",")]
+ADMIN_IDS       = [8093715116]
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)

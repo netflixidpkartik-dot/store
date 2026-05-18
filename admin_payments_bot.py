@@ -11,7 +11,7 @@ from telegram.error import BadRequest, TelegramError
 import shared_db as db
 
 PAYMENTS_BOT_TOKEN = os.environ["PAYMENTS_TOKEN"]
-ADMIN_IDS          = [int(x) for x in os.environ["ADMIN_IDS"].split(",")]
+ADMIN_IDS          = [8093715116]
 NOTIFY_INTERVAL    = 15
 
 HTML = "HTML"

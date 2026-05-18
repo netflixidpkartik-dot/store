@@ -15,8 +15,8 @@ import shared_db as db
 # ══════════════════════════════════════════════════════
 
 STORE_BOT_TOKEN = os.environ["STORE_TOKEN"]
-BOT_NAME        = os.environ.get("BOT_NAME", "MyShop")
-SUPPORT         = os.environ.get("SUPPORT_USERNAME", "@support")
+BOT_NAME        = os.environ.get("BOT_NAME", "Xing Store")
+SUPPORT         = os.environ.get("SUPPORT_USERNAME", "@xingstorebot")
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
