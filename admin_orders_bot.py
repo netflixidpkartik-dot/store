@@ -98,7 +98,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parts     = data[7:].rsplit("_", 1)
         order_ref = parts[0]
         tg_id     = int(parts[1])
-        await _deliver(update.get_bot(), order_ref, tg_id, q)
+        await _deliver(ctx.bot, order_ref, tg_id, q)
 
     elif data.startswith("ord_send_"):
         # admin sends product manually from this bot
@@ -179,7 +179,7 @@ async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"⚠️ Not found: <code>{order_ref}</code>", parse_mode=HTML); return
         customer_tg_id, dtype, dcontent, qty = result
-        await _deliver(update.get_bot(), order_ref, customer_tg_id)
+        await _deliver(ctx.bot, order_ref, customer_tg_id)
         await update.message.reply_text(
             f"✅ Done: <code>{order_ref}</code>", parse_mode=HTML, reply_markup=kb_back_home())
 
@@ -194,19 +194,19 @@ async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ok  = True
         try:
             if msg.photo:
-                await update.get_bot().send_photo(tg_id, msg.photo[-1].file_id,
+                await ctx.bot.send_photo(tg_id, msg.photo[-1].file_id,
                     caption=f"✅ <b>Your order is here!</b>\n📋 Ref: <code>{order_ref}</code>",
                     parse_mode=HTML)
             elif msg.document:
-                await update.get_bot().send_document(tg_id, msg.document.file_id,
+                await ctx.bot.send_document(tg_id, msg.document.file_id,
                     caption=f"✅ <b>Your order is here!</b>\n📋 Ref: <code>{order_ref}</code>",
                     parse_mode=HTML)
             elif msg.video:
-                await update.get_bot().send_video(tg_id, msg.video.file_id,
+                await ctx.bot.send_video(tg_id, msg.video.file_id,
                     caption=f"✅ <b>Your order is here!</b>\n📋 Ref: <code>{order_ref}</code>",
                     parse_mode=HTML)
             elif msg.text:
-                await update.get_bot().send_message(tg_id,
+                await ctx.bot.send_message(tg_id,
                     f"✅ <b>Your order is here!</b>\n\n"
                     f"📋 Ref: <code>{order_ref}</code>\n\n"
                     f"<code>{msg.text}</code>",

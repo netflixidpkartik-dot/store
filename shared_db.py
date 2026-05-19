@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""shared_db.py — All DB functions used by all 4 bots."""
+"""shared_db.py — All DB functions."""
 
 import sqlite3, random
 from datetime import datetime
@@ -15,12 +15,14 @@ def init_db():
     con = _db()
     con.execute("""CREATE TABLE IF NOT EXISTS users (
         tg_id INTEGER PRIMARY KEY, name TEXT, username TEXT,
-        created_at TEXT, balance REAL DEFAULT 0.0)""")
+        created_at TEXT, balance REAL DEFAULT 0.0, lang TEXT DEFAULT 'en')""")
+    # add lang col if upgrading
+    try: con.execute("ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'en'")
+    except: pass
     con.execute("""CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT, price REAL, stock INTEGER DEFAULT 0,
-        delivery_type TEXT DEFAULT 'text',
-        delivery_content TEXT,
+        delivery_type TEXT DEFAULT 'text', delivery_content TEXT,
         active INTEGER DEFAULT 1)""")
     con.execute("""CREATE TABLE IF NOT EXISTS carts (
         tg_id INTEGER, product_id INTEGER, PRIMARY KEY (tg_id, product_id))""")
@@ -35,8 +37,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tg_id INTEGER, ref TEXT,
         amount REAL DEFAULT 0, network TEXT,
-        txn_id TEXT,
-        status TEXT DEFAULT 'pending',
+        txn_id TEXT, status TEXT DEFAULT 'pending',
         created_at TEXT, notified INTEGER DEFAULT 0)""")
     con.execute("""CREATE TABLE IF NOT EXISTS wallets (
         key TEXT PRIMARY KEY, label TEXT, address TEXT, active INTEGER DEFAULT 1)""")
@@ -44,24 +45,34 @@ def init_db():
         code TEXT PRIMARY KEY, amount REAL,
         max_uses INTEGER, used INTEGER DEFAULT 0, created_at TEXT)""")
 
-    # Seed wallets if empty
     if con.execute("SELECT COUNT(*) FROM wallets").fetchone()[0] == 0:
         con.executemany("INSERT INTO wallets (key,label,address,active) VALUES (?,?,?,1)", [
-            ("usdt_bep20", "💵 USDT BEP-20 (BSC)",  "0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
-            ("usdt_eth",   "🔷 USDT ERC-20 (ETH)",  "0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
-            ("btc",        "₿ Bitcoin (BTC)",        "bc1q0gtel9l8sczkrlv3ywdqkk9adln8f84zw0wczr"),
-            ("ltc",        "🥈 Litecoin (LTC)",      "ltc1qj3f4rdevg738hrnf0xpdvlkc9k98u3ahkfykrj"),
-            ("ton",        "💎 TON",                 "UQCAoTZkL0N_gxjDnV1-PC1rgqdPgfGDhtJs-YU2yHbkeZy-"),
-            ("usdt_sol",   "🟣 USDT Solana (SPL)",   "CLiBT9JuTJCjpBkf4HXZMCimkzxJKX8PJxJtxHTd6iFe"),
-            ("bnb",        "🟡 BNB (BSC)",           "0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
+            ("usdt_bep20","💵 USDT BEP-20 (BSC)","0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
+            ("usdt_eth",  "🔷 USDT ERC-20 (ETH)","0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
+            ("btc",       "₿ Bitcoin (BTC)",      "bc1q0gtel9l8sczkrlv3ywdqkk9adln8f84zw0wczr"),
+            ("ltc",       "🥈 Litecoin (LTC)",    "ltc1qj3f4rdevg738hrnf0xpdvlkc9k98u3ahkfykrj"),
+            ("ton",       "💎 TON",               "UQCAoTZkL0N_gxjDnV1-PC1rgqdPgfGDhtJs-YU2yHbkeZy-"),
+            ("usdt_sol",  "🟣 USDT Solana (SPL)", "CLiBT9JuTJCjpBkf4HXZMCimkzxJKX8PJxJtxHTd6iFe"),
+            ("bnb",       "🟡 BNB (BSC)",         "0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
         ])
     con.commit(); con.close()
 
 # ── Users ──────────────────────────────────────────────
 def ensure_user(tg_id, name, username=""):
     con = _db()
-    con.execute("INSERT OR IGNORE INTO users (tg_id,name,username,created_at,balance) VALUES (?,?,?,?,0.0)",
-                (tg_id, name, username, datetime.now().isoformat()))
+    con.execute(
+        "INSERT OR IGNORE INTO users (tg_id,name,username,created_at,balance,lang) VALUES (?,?,?,?,0.0,'en')",
+        (tg_id, name, username, datetime.now().isoformat()))
+    con.commit(); con.close()
+
+def get_lang(tg_id):
+    con = _db()
+    r = con.execute("SELECT lang FROM users WHERE tg_id=?", (tg_id,)).fetchone()
+    con.close(); return (r[0] or "en") if r else "en"
+
+def set_lang(tg_id, lang):
+    con = _db()
+    con.execute("UPDATE users SET lang=? WHERE tg_id=?", (lang, tg_id))
     con.commit(); con.close()
 
 def get_balance(tg_id):
@@ -72,6 +83,11 @@ def get_balance(tg_id):
 def deduct_balance(tg_id, amount):
     con = _db()
     con.execute("UPDATE users SET balance=balance-? WHERE tg_id=?", (amount, tg_id))
+    con.commit(); con.close()
+
+def add_balance(tg_id, amount):
+    con = _db()
+    con.execute("UPDATE users SET balance=balance+? WHERE tg_id=?", (amount, tg_id))
     con.commit(); con.close()
 
 def get_user_info(tg_id):
@@ -96,15 +112,13 @@ def get_active_products():
         "SELECT id,name,price,stock,delivery_type,delivery_content FROM products WHERE active=1 ORDER BY id"
     ).fetchall()
     con.close()
-    return [{"id":r[0],"name":r[1],"price":r[2],"stock":r[3],
-             "delivery_type":r[4],"delivery_content":r[5]} for r in rows]
+    return [{"id":r[0],"name":r[1],"price":r[2],"stock":r[3],"delivery_type":r[4],"delivery_content":r[5]} for r in rows]
 
 def get_all_products():
     con = _db()
     rows = con.execute("SELECT id,name,price,stock,delivery_type,active FROM products ORDER BY id").fetchall()
     con.close()
-    return [{"id":r[0],"name":r[1],"price":r[2],"stock":r[3],
-             "delivery_type":r[4],"active":r[5]} for r in rows]
+    return [{"id":r[0],"name":r[1],"price":r[2],"stock":r[3],"delivery_type":r[4],"active":r[5]} for r in rows]
 
 def get_product(pid):
     con = _db()
@@ -113,14 +127,12 @@ def get_product(pid):
     ).fetchone()
     con.close()
     if not r: return None
-    return {"id":r[0],"name":r[1],"price":r[2],"stock":r[3],
-            "delivery_type":r[4],"delivery_content":r[5],"active":r[6]}
+    return {"id":r[0],"name":r[1],"price":r[2],"stock":r[3],"delivery_type":r[4],"delivery_content":r[5],"active":r[6]}
 
 def add_product(name, price, stock, delivery_type, delivery_content):
     con = _db()
-    con.execute(
-        "INSERT INTO products (name,price,stock,delivery_type,delivery_content,active) VALUES (?,?,?,?,?,1)",
-        (name, price, stock, delivery_type, delivery_content))
+    con.execute("INSERT INTO products (name,price,stock,delivery_type,delivery_content,active) VALUES (?,?,?,?,?,1)",
+                (name, price, stock, delivery_type, delivery_content))
     con.commit()
     pid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
     con.close(); return pid
@@ -145,7 +157,7 @@ def delete_product(pid):
 
 def reduce_stock(pid, qty):
     con = _db()
-    con.execute("UPDATE products SET stock=MAX(0, stock-?) WHERE id=?", (qty, pid))
+    con.execute("UPDATE products SET stock=MAX(0,stock-?) WHERE id=?", (qty, pid))
     con.commit(); con.close()
 
 # ── Cart ───────────────────────────────────────────────
@@ -170,10 +182,10 @@ def clear_cart(tg_id):
 # ── Orders ─────────────────────────────────────────────
 def save_order(tg_id, product, order_ref, quantity=1):
     con = _db(); now = datetime.now().strftime("%d/%m/%Y %H:%M")
-    total_price = product["price"] * quantity
+    total_price = round(product["price"] * quantity, 4)
     con.execute(
         "INSERT INTO orders (tg_id,order_ref,product_id,product_name,price,quantity,status,created_at,notified) "
-        "VALUES (?,?,?,?,?,'pending',?,0)",
+        "VALUES (?,?,?,?,?,?,'pending',?,0)",
         (tg_id, order_ref, product["id"], product["name"], total_price, quantity, now))
     con.commit(); con.close()
 
@@ -192,9 +204,8 @@ def get_unnotified_orders():
         WHERE o.notified=0 ORDER BY o.id""").fetchall()
     con.close(); return rows
 
-def mark_order_notified(order_id):
-    con = _db()
-    con.execute("UPDATE orders SET notified=1 WHERE id=?", (order_id,))
+def mark_order_notified(oid):
+    con = _db(); con.execute("UPDATE orders SET notified=1 WHERE id=?", (oid,))
     con.commit(); con.close()
 
 def deliver_order(order_ref):
@@ -203,9 +214,9 @@ def deliver_order(order_ref):
     con.commit()
     r = con.execute(
         "SELECT o.tg_id, p.delivery_type, p.delivery_content, o.quantity "
-        "FROM orders o LEFT JOIN products p ON o.product_id=p.id "
-        "WHERE o.order_ref=?", (order_ref,)).fetchone()
-    con.close(); return r  # (tg_id, delivery_type, delivery_content, quantity)
+        "FROM orders o LEFT JOIN products p ON o.product_id=p.id WHERE o.order_ref=?",
+        (order_ref,)).fetchone()
+    con.close(); return r
 
 def get_recent_orders_admin(limit=20):
     con = _db()
@@ -220,8 +231,7 @@ def get_recent_orders_admin(limit=20):
 def save_deposit_txn(tg_id, ref, network, txn_id):
     con = _db(); now = datetime.now().strftime("%d/%m/%Y %H:%M")
     con.execute(
-        "INSERT INTO deposits (tg_id,ref,network,txn_id,status,created_at,notified) "
-        "VALUES (?,?,?,?,'pending',?,0)",
+        "INSERT INTO deposits (tg_id,ref,network,txn_id,status,created_at,notified) VALUES (?,?,?,?,'pending',?,0)",
         (tg_id, ref, network, txn_id, now))
     con.commit(); con.close()
 
@@ -234,8 +244,7 @@ def get_unnotified_deposits():
     con.close(); return rows
 
 def mark_deposit_notified(dep_id):
-    con = _db()
-    con.execute("UPDATE deposits SET notified=1 WHERE id=?", (dep_id,))
+    con = _db(); con.execute("UPDATE deposits SET notified=1 WHERE id=?", (dep_id,))
     con.commit(); con.close()
 
 def approve_deposit(dep_id, amount):
@@ -284,8 +293,7 @@ def create_redeem_code(code, amount, max_uses):
         con.execute("INSERT INTO redeem_codes (code,amount,max_uses,used,created_at) VALUES (?,?,?,0,?)",
                     (code.upper(), amount, max_uses, datetime.now().isoformat()))
         con.commit(); con.close(); return True
-    except Exception:
-        con.close(); return False
+    except: con.close(); return False
 
 def try_redeem(tg_id, code):
     con = _db()
