@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""admin_payments_bot.py — Deposit TXN review & approval. BUG FIXED: ctx.bot used."""
+"""admin_payments_bot.py — Deposit review & approval.
+FIX: Uses STORE bot token to notify customers (they only started store bot).
+"""
 
 import asyncio, logging, os, sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
@@ -11,6 +13,7 @@ from telegram.error import BadRequest, TelegramError
 import shared_db as db
 
 PAYMENTS_BOT_TOKEN = os.environ["PAYMENTS_TOKEN"]
+STORE_BOT_TOKEN    = os.environ["STORE_TOKEN"]   # ← used to DM customers
 ADMIN_IDS          = [8093715116]
 NOTIFY_INTERVAL    = 15
 
@@ -23,6 +26,18 @@ def is_admin(uid): return uid in ADMIN_IDS
 async def safe_ans(q, text="", alert=False):
     try: await q.answer(text, show_alert=alert)
     except BadRequest: pass
+
+# ── Store bot instance — for notifying customers ──────
+async def notify_customer(tg_id: int, text: str) -> bool:
+    """Send message to customer via STORE bot (they started that, not this bot)."""
+    try:
+        store = Bot(token=STORE_BOT_TOKEN)
+        async with store:
+            await store.send_message(tg_id, text, parse_mode="HTML")
+        return True
+    except TelegramError as e:
+        logging.error(f"notify_customer {tg_id} failed: {e}")
+        return False
 
 def kb_home():
     return InlineKeyboardMarkup([
@@ -46,7 +61,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"💳 <b>Admin Payments Bot</b>\n\n"
         f"⏳ Pending Deposits: <b>{pd}</b>\n\n"
-        f"You'll be notified when a customer submits a TXN ID.",
+        f"You'll be notified when a customer submits a TXN ID.\n"
+        f"After approval, customer gets notified via Store Bot.",
         parse_mode=HTML, reply_markup=kb_home())
 
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -84,8 +100,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=HTML, reply_markup=InlineKeyboardMarkup(rows))
 
     elif data.startswith("pay_view_"):
-        rest   = data[9:]
-        parts  = rest.split("_", 1)
+        rest  = data[9:]; parts = rest.split("_", 1)
         dep_id = int(parts[0]); tg_id = int(parts[1])
         con = sqlite3.connect(db.DB_FILE)
         d = con.execute("""
@@ -105,10 +120,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=HTML, reply_markup=kb_proof_actions(dep_id, tg_id))
 
     elif data.startswith("pay_approve_"):
-        rest   = data[12:]
-        parts  = rest.split("_", 1)
+        rest  = data[12:]; parts = rest.split("_", 1)
         dep_id = int(parts[0]); tg_id = int(parts[1])
-        ctx.user_data["action"]   = ("approve", dep_id, tg_id)
+        ctx.user_data["action"] = ("approve", dep_id, tg_id)
         await q.edit_message_text(
             "✅ <b>Enter amount in USDT to credit</b>\n\nExample: <code>5.00</code>",
             parse_mode=HTML,
@@ -117,23 +131,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]]))
 
     elif data.startswith("pay_reject_"):
-        rest   = data[11:]
-        parts  = rest.split("_", 1)
+        rest  = data[11:]; parts = rest.split("_", 1)
         dep_id = int(parts[0]); tg_id = int(parts[1])
         db.reject_deposit(dep_id)
-
-        # ── FIX: use ctx.bot not update.get_bot() ─────
-        cust_lang = db.get_lang(tg_id)
-        from translations import t
-        try:
-            await ctx.bot.send_message(
-                tg_id,
-                t("dep_rejected", cust_lang),
-                parse_mode=HTML)
-        except TelegramError as e:
-            logging.error(f"Reject notify failed: {e}")
-
-        await q.edit_message_text("❌ Deposit rejected.", reply_markup=kb_back_home())
+        sent = await notify_customer(
+            tg_id,
+            "❌ <b>Deposit Rejected</b>\n\n"
+            "Your TXN ID could not be verified.\n"
+            "Contact support if you think this is wrong.")
+        status = "✅ Customer notified." if sent else "⚠️ Could not notify customer (they may not have started store bot)."
+        await q.edit_message_text(f"❌ Deposit rejected.\n{status}", reply_markup=kb_back_home())
 
     elif data == "pay_stats":
         u, o, po, r, pd = db.get_stats()
@@ -158,29 +165,28 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("⚠️ Invalid amount. Try again."); return
 
-    # Approve in DB
+    # Credit balance in DB
     db.approve_deposit(dep_id, amount)
 
+    # Notify admin
     await update.message.reply_text(
         f"✅ Approved! <b>${amount:.2f} USDT</b> credited to <code>{tg_id}</code>",
         parse_mode=HTML, reply_markup=kb_back_home())
 
-    # ── FIX: use ctx.bot to notify customer ────────────
-    cust_lang = db.get_lang(tg_id)
-    from translations import t
-    try:
-        await ctx.bot.send_message(
-            tg_id,
-            t("dep_approved", cust_lang, amount=f"{amount:.2f}"),
-            parse_mode=HTML)
-        logging.info(f"✅ Notified customer {tg_id} about deposit approval")
-    except TelegramError as e:
-        logging.error(f"Customer notify failed for {tg_id}: {e}")
+    # ── Notify customer via STORE BOT ──────────────────
+    sent = await notify_customer(
+        tg_id,
+        f"✅ <b>Deposit Approved!</b>\n\n"
+        f"💰 <b>${amount:.2f} USDT</b> has been added to your wallet.\n"
+        f"You can now purchase products! 🛍")
+    if not sent:
         await update.message.reply_text(
-            f"⚠️ Could not notify customer {tg_id} — they may have blocked the store bot.")
+            f"⚠️ Customer {tg_id} could not be notified.\n"
+            f"They may not have started the store bot yet.")
 
 
 async def notify_loop(bot):
+    """Poll for new deposits and ping admin."""
     while True:
         try:
             for row in db.get_unnotified_deposits():
@@ -194,15 +200,15 @@ async def notify_loop(bot):
                     f"📋 Ref      : <code>{ref}</code>\n"
                     f"📅 Time     : {created}"
                 )
-                kb = kb_proof_actions(dep_id, tg_id)
                 for aid in ADMIN_IDS:
                     try:
-                        await bot.send_message(aid, text, parse_mode=HTML, reply_markup=kb)
+                        await bot.send_message(aid, text, parse_mode=HTML,
+                                               reply_markup=kb_proof_actions(dep_id, tg_id))
                     except TelegramError as e:
-                        logging.error(f"Notify admin {aid} failed: {e}")
+                        logging.error(f"Notify admin {aid}: {e}")
                 db.mark_deposit_notified(dep_id)
         except Exception as e:
-            logging.error(f"notify_loop error: {e}")
+            logging.error(f"notify_loop: {e}")
         await asyncio.sleep(NOTIFY_INTERVAL)
 
 

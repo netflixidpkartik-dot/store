@@ -107,21 +107,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"📦 <b>Products</b>  ({len(prods)} total)\n✅=active  🔴=hidden",
             parse_mode=HTML, reply_markup=kb_product_list(prods))
 
-    elif data == "pnl_add":
-        ctx.user_data["action"] = ("add_content", None)
-        await q.edit_message_text(
-            "➕ <b>Add New Product</b>\n\n"
-            "📩 <b>Step 1:</b> Send or forward the product content.\n\n"
-            "Kuch bhi bhejo — photo, video, document, ya text.\n"
-            "Caption mein likho: <code>Name | Price | Stock</code>\n\n"
-            "Example caption:\n"
-            "<code>ChatGPT Plus 1M | 2.50 | 30</code>\n\n"
-            "<i>Caption nahi diya? Agle step mein poochhunga.</i>",
-            parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("❌ Cancel", callback_data="pnl_products")
-            ]]))
-
     elif data.startswith("pnl_p_") and not any(data.startswith(x) for x in
           ["pnl_pname_","pnl_pprice_","pnl_pstock_","pnl_pdel_","pnl_ptoggle_","pnl_pdelconfirm_","pnl_pdelete_"]):
         pid = int(data[6:])
@@ -158,7 +143,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pid = int(data[9:]); ctx.user_data["action"] = ("edit_delivery", pid)
         await q.edit_message_text(
             f"📝 <b>Edit Delivery Content — Product #{pid}</b>\n\n"
-            f"Jo bhi bhejo (photo, video, document, text) — wahi delivery content ban jayega.",
+            f"Forward or send the content that buyers will receive.\n"
+            f"(text, photo, document, video — anything works)",
             parse_mode=HTML,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"pnl_p_{pid}")]]))
 
@@ -183,30 +169,43 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]))
 
     elif data.startswith("pnl_pdelete_"):
-        pid = int(data[12:])
-        db.delete_product(pid)
-        await q.edit_message_text(f"🗑 Product #{pid} deleted.", reply_markup=kb_back_home())
+        pid = int(data[12:]); db.delete_product(pid)
+        await safe_ans(q, f"Deleted.", alert=True)
+        await q.edit_message_text("📦 <b>Products</b>", parse_mode=HTML,
+                                  reply_markup=kb_product_list(db.get_all_products()))
+
+    elif data == "pnl_add":
+        ctx.user_data["action"] = ("add_step1", None)
+        await q.edit_message_text(
+            "➕ <b>Add Product — Step 1/2</b>\n\n"
+            "Forward or send the <b>delivery content</b> that buyers will receive.\n\n"
+            "<i>Can be text (credentials, link, key), photo, document, video — anything.</i>",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pnl_products")]]))
 
     elif data == "pnl_wallets":
-        await q.edit_message_text("💳 <b>Wallet Addresses</b>", parse_mode=HTML,
-                                  reply_markup=kb_wallet_list(db.get_all_wallets()))
+        await q.edit_message_text("💳 <b>Wallet Addresses</b>\n✅=active  🔴=hidden",
+            parse_mode=HTML, reply_markup=kb_wallet_list(db.get_all_wallets()))
 
-    elif data.startswith("pnl_w_") and not data.startswith("pnl_waddr_") and not data.startswith("pnl_wtoggle_"):
+    elif data.startswith("pnl_w_") and not any(data.startswith(x) for x in ["pnl_waddr_","pnl_wtoggle_"]):
         key = data[6:]
         ws  = {w["key"]: w for w in db.get_all_wallets()}
         w   = ws.get(key)
         if not w: await safe_ans(q, "Not found.", alert=True); return
         status = "✅ Active" if w["active"] else "🔴 Hidden"
         await q.edit_message_text(
-            f"💳 <b>{w['label']}</b>\n\n"
-            f"Address : <code>{w['address']}</code>\n"
-            f"Status  : {status}",
+            f"💳 <b>{w['label']}</b>\n\nAddress: <code>{w['address']}</code>\nStatus: {status}",
             parse_mode=HTML, reply_markup=kb_wallet_actions(key))
 
     elif data.startswith("pnl_waddr_"):
         key = data[10:]; ctx.user_data["action"] = ("edit_wallet", key)
-        await q.edit_message_text(f"✏️ Send new address for <b>{key}</b>:", parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pnl_wallets")]]))
+        ws  = {w["key"]: w for w in db.get_all_wallets()}
+        w   = ws.get(key, {})
+        await q.edit_message_text(
+            f"✏️ <b>Change Address — {w.get('label','')}</b>\n\n"
+            f"Current:\n<code>{w.get('address','')}</code>\n\nSend the new address:",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"pnl_w_{key}")]]))
 
     elif data.startswith("pnl_wtoggle_"):
         key    = data[12:]
@@ -253,35 +252,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pnl_home")]]))
 
 
-# ══════════════════════════════════════════════════════
-#  SMART CONTENT EXTRACTOR
-# ══════════════════════════════════════════════════════
-
 async def _get_content(message):
-    """Extract delivery type and content from any message."""
     if message.photo:     return "photo",    message.photo[-1].file_id
     if message.document:  return "document", message.document.file_id
     if message.video:     return "video",    message.video.file_id
     if message.audio:     return "audio",    message.audio.file_id
-    if message.sticker:   return "text",     message.sticker.file_id
     if message.text:      return "text",     message.text
     if message.caption:   return "text",     message.caption
     return "text", ""
-
-def _parse_details(text):
-    """Parse 'Name | Price | Stock' from text. Returns (name, price, stock) or None."""
-    if not text: return None
-    parts = [x.strip() for x in text.split("|")]
-    if len(parts) < 3: return None
-    try:
-        return parts[0], float(parts[1]), int(parts[2])
-    except ValueError:
-        return None
-
-
-# ══════════════════════════════════════════════════════
-#  MESSAGE HANDLER — handles all admin messages
-# ══════════════════════════════════════════════════════
 
 async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
@@ -290,98 +268,64 @@ async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kind    = action[0]
     message = update.message
 
-    # ── ADD PRODUCT — single message flow ─────────────
-    if kind == "add_content":
+    if kind == "add_step1":
         dtype, dcontent = await _get_content(message)
-        if not dcontent:
-            await message.reply_text("⚠️ Kuch samajh nahi aaya. Dobara bhejo."); return
+        if not dcontent: await message.reply_text("⚠️ Could not read. Try again."); return
+        ctx.user_data["action"]         = ("add_step2", None)
+        ctx.user_data["new_prod_dtype"] = dtype
+        ctx.user_data["new_prod_dcont"] = dcontent
+        await message.reply_text(
+            f"✅ Content saved! (<b>{dtype}</b>)\n\n"
+            f"<b>Step 2/2</b> — Send product details:\n"
+            f"<code>NAME | PRICE | STOCK</code>\n\n"
+            f"Example: <code>ChatGPT Plus 1M | 2.50 | 30</code>",
+            parse_mode=HTML)
 
-        # Try to get details from caption or text
-        caption_text = (message.caption or message.text or "").strip()
-        details = _parse_details(caption_text)
-
-        if details:
-            # All info in one message — save directly
-            name, price, stock = details
-            ctx.user_data.pop("action", None)
-            pid = db.add_product(name, price, stock, dtype, dcontent)
-            await message.reply_text(
-                f"✅ <b>Product Added!</b>\n\n"
-                f"🆔 ID     : #{pid}\n"
-                f"📦 Name   : <b>{name}</b>\n"
-                f"💰 Price  : <b>${price:.2f} USDT</b>\n"
-                f"📦 Stock  : <b>{stock}</b>\n"
-                f"📎 Type   : <b>{dtype}</b>",
-                parse_mode=HTML, reply_markup=kb_back_home())
-        else:
-            # Content saved, now ask for details
-            ctx.user_data["action"]         = ("add_details", None)
-            ctx.user_data["new_prod_dtype"] = dtype
-            ctx.user_data["new_prod_dcont"] = dcontent
-            await message.reply_text(
-                f"✅ Content saved! (<b>{dtype}</b>)\n\n"
-                f"Ab product details bhejo:\n"
-                f"<code>Name | Price | Stock</code>\n\n"
-                f"Example: <code>ChatGPT Plus 1M | 2.50 | 30</code>",
-                parse_mode=HTML)
-
-    elif kind == "add_details":
-        details = _parse_details(message.text or "")
-        if not details:
-            await message.reply_text(
-                "⚠️ Sahi format bhejo:\n<code>Name | Price | Stock</code>\n\n"
-                "Example: <code>Netflix 1M | 3.00 | 20</code>",
-                parse_mode=HTML)
-            ctx.user_data["action"] = ("add_details", None); return
-        name, price, stock = details
+    elif kind == "add_step2":
+        parts = [x.strip() for x in (message.text or "").split("|")]
+        if len(parts) < 3:
+            await message.reply_text("⚠️ Format: <code>NAME | PRICE | STOCK</code>", parse_mode=HTML)
+            ctx.user_data["action"] = ("add_step2", None); return
+        try:
+            name  = parts[0]; price = float(parts[1]); stock = int(parts[2])
+        except ValueError:
+            await message.reply_text("⚠️ Price = decimal, Stock = whole number."); return
         dtype    = ctx.user_data.pop("new_prod_dtype", "text")
         dcontent = ctx.user_data.pop("new_prod_dcont", "")
         ctx.user_data.pop("action", None)
         pid = db.add_product(name, price, stock, dtype, dcontent)
         await message.reply_text(
-            f"✅ <b>Product Added!</b>\n\n"
-            f"🆔 ID     : #{pid}\n"
-            f"📦 Name   : <b>{name}</b>\n"
-            f"💰 Price  : <b>${price:.2f} USDT</b>\n"
-            f"📦 Stock  : <b>{stock}</b>\n"
-            f"📎 Type   : <b>{dtype}</b>",
+            f"✅ <b>Product added!</b>\n\nID #{pid} | {name}\n💰 ${price:.2f} | 📦 {stock}",
             parse_mode=HTML, reply_markup=kb_back_home())
 
-    # ── EDIT DELIVERY ──────────────────────────────────
     elif kind == "edit_delivery":
         pid = action[1]; ctx.user_data.pop("action", None)
         dtype, dcontent = await _get_content(message)
-        if not dcontent: await message.reply_text("⚠️ Content samajh nahi aaya."); return
+        if not dcontent: await message.reply_text("⚠️ Could not read content."); return
         db.update_product(pid, delivery_type=dtype, delivery_content=dcontent)
         await message.reply_text(f"✅ Delivery updated! ({dtype})", reply_markup=kb_back_home())
 
-    # ── EDIT NAME ──────────────────────────────────────
     elif kind == "edit_name":
         pid = action[1]; ctx.user_data.pop("action", None)
-        db.update_product(pid, name=(message.text or "").strip())
+        db.update_product(pid, name=message.text.strip())
         await message.reply_text("✅ Name updated!", reply_markup=kb_back_home())
 
-    # ── EDIT PRICE ─────────────────────────────────────
     elif kind == "edit_price":
         pid = action[1]; ctx.user_data.pop("action", None)
         try:
-            price = float((message.text or "").strip())
-            db.update_product(pid, price=price)
+            price = float(message.text.strip()); db.update_product(pid, price=price)
             await message.reply_text(f"✅ Price set to ${price:.2f}", reply_markup=kb_back_home())
         except ValueError:
             await message.reply_text("⚠️ Invalid price."); ctx.user_data["action"] = action
 
-    # ── EDIT STOCK ─────────────────────────────────────
     elif kind == "edit_stock":
         pid = action[1]; ctx.user_data.pop("action", None)
         try:
-            stock = int((message.text or "").strip())
-            db.update_product(pid, stock=stock)
+            stock = int(message.text.strip()); db.update_product(pid, stock=stock)
             await message.reply_text(f"✅ Stock set to {stock}", reply_markup=kb_back_home())
         except ValueError:
             await message.reply_text("⚠️ Invalid stock."); ctx.user_data["action"] = action
 
-    # ── EDIT WALLET ────────────────────────────────────
     elif kind == "edit_wallet":
         key = action[1]; ctx.user_data.pop("action", None)
         addr = (message.text or "").strip()
@@ -390,7 +334,6 @@ async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await message.reply_text(f"✅ Address updated!\n<code>{addr}</code>",
                                  parse_mode=HTML, reply_markup=kb_back_home())
 
-    # ── SET BALANCE ────────────────────────────────────
     elif kind == "set_balance":
         ctx.user_data.pop("action", None)
         parts = (message.text or "").split()
@@ -398,11 +341,10 @@ async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("⚠️ Format: <code>USER_ID AMOUNT</code>", parse_mode=HTML); return
         try:
             db.set_balance(int(parts[0]), float(parts[1]))
-            await message.reply_text("✅ Done!", reply_markup=kb_back_home())
+            await message.reply_text(f"✅ Done!", reply_markup=kb_back_home())
         except ValueError:
             await message.reply_text("⚠️ Invalid format.")
 
-    # ── CREATE REDEEM CODE ─────────────────────────────
     elif kind == "create_code":
         ctx.user_data.pop("action", None)
         parts = (message.text or "").split()
@@ -421,8 +363,7 @@ async def run():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(
-        (filters.TEXT | filters.PHOTO | filters.Document.ALL |
-         filters.VIDEO | filters.AUDIO | filters.Sticker.ALL)
+        (filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.VIDEO | filters.AUDIO)
         & ~filters.COMMAND, on_any_message))
     print("✅ Admin Panel Bot running...")
     async with app:
