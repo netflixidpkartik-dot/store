@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """shared_db.py — All DB functions."""
 
-import sqlite3, random
+import sqlite3, random, os
 from datetime import datetime
 
-DB_FILE = "tgaccs.db"
+DB_FILE = os.environ.get("DB_PATH", "/data/xingmart.db")
+os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
 
 def _db():
     con = sqlite3.connect(DB_FILE)
@@ -317,3 +318,21 @@ def get_stats():
 
 def new_ref(prefix):
     return f"#{prefix}{random.randint(10000,99999)}"
+
+# ── Announcements ──────────────────────────────────────
+def get_all_user_ids():
+    con = _db()
+    rows = con.execute("SELECT tg_id FROM users").fetchall()
+    con.close()
+    return [r[0] for r in rows]
+
+def randomize_all_stocks():
+    con = _db()
+    products = con.execute("SELECT id FROM products WHERE active=1").fetchall()
+    for (pid,) in products:
+        stock = random.randint(1, 99)
+        con.execute("UPDATE products SET stock=? WHERE id=?", (stock, pid))
+    con.commit()
+    count = len(products)
+    con.close()
+    return count
