@@ -14,7 +14,7 @@ import shared_db as db
 
 ORDERS_BOT_TOKEN = os.environ["ORDERS_TOKEN"]
 STORE_BOT_TOKEN  = os.environ["STORE_TOKEN"]   # ← used to send products to customers
-ADMIN_IDS        = [8093715116]
+ADMIN_IDS        = [8949365349]
 NOTIFY_INTERVAL  = 15
 
 HTML = "HTML"
