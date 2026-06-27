@@ -48,13 +48,8 @@ def init_db():
 
     if con.execute("SELECT COUNT(*) FROM wallets").fetchone()[0] == 0:
         con.executemany("INSERT INTO wallets (key,label,address,active) VALUES (?,?,?,1)", [
-            ("usdt_bep20","💵 USDT BEP-20 (BSC)","0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
-            ("usdt_eth",  "🔷 USDT ERC-20 (ETH)","0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
-            ("btc",       "₿ Bitcoin (BTC)",      "bc1q0gtel9l8sczkrlv3ywdqkk9adln8f84zw0wczr"),
-            ("ltc",       "🥈 Litecoin (LTC)",    "ltc1qj3f4rdevg738hrnf0xpdvlkc9k98u3ahkfykrj"),
-            ("ton",       "💎 TON",               "UQCAoTZkL0N_gxjDnV1-PC1rgqdPgfGDhtJs-YU2yHbkeZy-"),
-            ("usdt_sol",  "🟣 USDT Solana (SPL)", "CLiBT9JuTJCjpBkf4HXZMCimkzxJKX8PJxJtxHTd6iFe"),
-            ("bnb",       "🟡 BNB (BSC)",         "0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
+            ("usdt_bep20","💵 USDT BEP-20 (BSC)","0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
+            ,
         ])
 
     # ── Lock payments to USDT BEP-20 only (re-applied every startup) ──
