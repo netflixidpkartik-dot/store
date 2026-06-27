@@ -48,57 +48,8 @@ def init_db():
 
     if con.execute("SELECT COUNT(*) FROM wallets").fetchone()[0] == 0:
         con.executemany("INSERT INTO wallets (key,label,address,active) VALUES (?,?,?,1)", [
-            ("usdt_bep20","💵 USDT BEP-20 (BSC)","0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
-            ("usdt_eth",  "🔷 USDT ERC-20 (ETH)","0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
-            ("btc",       "₿ Bitcoin (BTC)",      "bc1q0gtel9l8sczkrlv3ywdqkk9adln8f84zw0wczr"),
-            ("ltc",       "🥈 Litecoin (LTC)",    "ltc1qj3f4rdevg738hrnf0xpdvlkc9k98u3ahkfykrj"),
-            ("ton",       "💎 TON",               "UQCAoTZkL0N_gxjDnV1-PC1rgqdPgfGDhtJs-YU2yHbkeZy-"),
-            ("usdt_sol",  "🟣 USDT Solana (SPL)", "CLiBT9JuTJCjpBkf4HXZMCimkzxJKX8PJxJtxHTd6iFe"),
-            ("bnb",       "🟡 BNB (BSC)",         "0xcF0ABcDF3afccBE577d4D930e01af5c7F50f5aB7"),
+            ("usdt_bep20","💵 USDT BEP-20 (BSC)","0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
         ])
-
-    # ── Lock payments to USDT BEP-20 only (re-applied every startup) ──
-    con.execute("UPDATE wallets SET address=? WHERE key='usdt_bep20'",
-                ("0x4C7894610C455d6381aCe22dce2468ccf95D2875",))
-    con.execute("UPDATE wallets SET active=1 WHERE key='usdt_bep20'")
-    con.execute("UPDATE wallets SET active=0 WHERE key!='usdt_bep20'")
-
-    # ── One-time product seed (only runs if products table is empty) ──
-    if con.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0:
-        placeholder = "Contact admin — delivered manually after purchase."
-        seed_products = [
-            ("Adobe Pro 1M",                        4.0, 10, "text", placeholder),
-            ("Canva Edu 1Y (DM for price)",         0.0, 10, "text", placeholder),
-            ("Canva Pro 1Y (DM for price)",         0.0, 10, "text", placeholder),
-            ("CapCut 1M",                           5.0, 10, "text", placeholder),
-            ("Claude Team Max 5 Slot",             65.0, 10, "text", placeholder),
-            ("Claude Team Pro Slot 1M (Option 1)", 16.0, 10, "text", placeholder),
-            ("Claude Team Pro Slot 1M (Option 2)", 17.0, 10, "text", placeholder),
-            ("Cursor Pro 1M",                      16.0, 10, "text", placeholder),
-            ("Cursor Pro Plus",                    60.0, 10, "text", placeholder),
-            ("ElevenLabs 1M",                      10.0, 10, "text", placeholder),
-            ("ExpressVPN / NordVPN",                2.0, 10, "text", placeholder),
-            ("Figma Pro 1Y",                       16.0, 10, "text", placeholder),
-            ("Gemini Pro 18M",                     10.0, 10, "text", placeholder),
-            ("Gemini Ultra 1M (DM for price)",      0.0, 10, "text", placeholder),
-            ("GPT Plus",                           10.0, 10, "text", placeholder),
-            ("Grok Super 7 Days",                   3.0, 10, "text", placeholder),
-            ("Grok Super 1M",                       5.0, 10, "text", placeholder),
-            ("Grok Super 3 Months",                16.0, 10, "text", placeholder),
-            ("HeyGen Creator 1M",                  25.0, 10, "text", placeholder),
-            ("Highsfield Ultra 1M",                60.0, 10, "text", placeholder),
-            ("Kiro Pro Max 1M",                     8.0, 10, "text", placeholder),
-            ("Kling Ultra 26K Credits",            80.0, 10, "text", placeholder),
-            ("Lovable AI Pro 1M",                  20.0, 10, "text", placeholder),
-            ("Microsoft Office Slot 1Y",            8.0, 10, "text", placeholder),
-            ("Suno Premium 1M",                    25.0, 10, "text", placeholder),
-            ("Xbox Game Pass Ultimate 1Y",         25.0, 10, "text", placeholder),
-            ("Xbox Game Pass Ultimate 1M",         12.0, 10, "text", placeholder),
-        ]
-        con.executemany(
-            "INSERT INTO products (name,price,stock,delivery_type,delivery_content,active) "
-            "VALUES (?,?,?,?,?,1)", seed_products)
-
     con.commit(); con.close()
 
 # ── Users ──────────────────────────────────────────────
