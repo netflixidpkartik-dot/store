@@ -49,7 +49,6 @@ def init_db():
     if con.execute("SELECT COUNT(*) FROM wallets").fetchone()[0] == 0:
         con.executemany("INSERT INTO wallets (key,label,address,active) VALUES (?,?,?,1)", [
             ("usdt_bep20","💵 USDT BEP-20 (BSC)","0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
-            ,
         ])
 
     # ── Lock payments to USDT BEP-20 only (re-applied every startup) ──
